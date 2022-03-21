@@ -14,7 +14,8 @@ library(ggpubr)
 ### p-glycoprotein (p-gp; Abcb1a) mRNA expression
 
 ```{r}
-pgp <- read.csv("../data/Abcb1a-ret-hyp-total.csv", fileEncoding = 'UTF-8-BOM')
+getwd()
+pgp <- read.csv("Abcb1a-ret-hyp-total.csv", fileEncoding = 'UTF-8-BOM')
 pgp <- pgp %>% mutate(Tissue = fct_relevel(Tissue, c("retina", "hypothalamus")),
                       Treatment = fct_relevel(as.factor(Treatment), c("saline", "morphine")))
 
