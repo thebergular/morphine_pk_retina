@@ -1,0 +1,492 @@
+---
+title: "morphine_pk-git"
+author: "nbergum"
+date: "3/20/2022"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(car)
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+library(ggthemes)
+library(lme4)
+```
+
+
+Data visualization for retina and serum on first day of morphine injections
+```{r}
+retina_pk <- read.csv("C:\\Users\\nikbe\\Documents\\Morphine Mass Spec\\morphine_pk_retina.csv", fileEncoding = 'UTF-8-BOM')
+pk_retina <- retina_pk %>% 
+  group_by(ZT,tissue, day, sex, animal) %>% 
+  dplyr::summarise(raw_conc = mean(raw_conc), tissue_wt = mean(retina_wt),
+                   body_wt= mean(body_wt), dose= mean(dose))
+pk_retina$conc_wt <- (pk_retina$raw_conc/pk_retina$tissue_wt)
+SumStat_pkr <- dplyr::summarise(group_by(pk_retina, ZT, tissue, day),
+n = n(),
+mean_conc = mean(raw_conc),
+sd_conc = sd(raw_conc),
+se_conc = sd_conc/sqrt(n),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n),
+log_conc = mean(log(raw_conc)),
+sd_conc_log = sd(log(raw_conc)),
+se_conc_log = sd_conc_log/sqrt(n),
+mean_wt = mean(body_wt),
+sd_wt = sd(body_wt),
+mean_dose = mean(dose),
+sd_dose = sd(dose),
+)
+
+serum_pk <- read.csv("C:\\Users\\nikbe\\Documents\\Morphine Mass Spec\\morphine_pk_serum.csv", fileEncoding = 'UTF-8-BOM')
+serum_pk
+pk_serum <- serum_pk %>% 
+  group_by(ZT,tissue, day, sex, animal) %>% 
+  dplyr::summarise(raw_conc = mean(raw_conc), tissue_wt = mean(volume),
+                   body_wt= mean(body_wt), dose= mean(dose))
+pk_serum$conc_wt <- (pk_serum$raw_conc/102.4)
+pk_serum
+SumStat_pks <- dplyr::summarise(group_by(pk_serum, ZT, tissue, day),
+n = n(),
+mean_conc = mean(raw_conc),
+sd_conc = sd(raw_conc),
+se_conc = sd_conc/sqrt(n),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n),
+log_conc = mean(log(raw_conc)),
+sd_conc_log = sd(log(raw_conc)),
+se_conc_log = sd_conc_log/sqrt(n),
+mean_wt = mean(body_wt),
+sd_wt = sd(body_wt),
+mean_dose = mean(dose),
+sd_dose = sd(dose),
+)
+
+SumStat_pk <- merge(SumStat_pkr, SumStat_pks, all= T)
+#View(SumStat_pk) #check files to sample match animals
+SumStat_pk1 <- subset(SumStat_pk, day %in% c("1"))
+knitr::kable(SumStat_pk1) #only data from day 1 sample collections
+write.table(SumStat_pk, file = "C:\\Users\\nikbe\\Documents\\Morphine Mass Spec\\Figures\\SumStats_pk_retina_serum.csv", sep=",", row.names=FALSE)
+
+pk1 <- ggplot(SumStat_pk1, aes(ZT, mean_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=mean_conc - se_conc, ymax=mean_conc + se_conc, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,24,2), limits=c(0,24)) + scale_y_continuous(name="Morphine concentration (ng/mL)") + scale_color_manual(values=c("blue", "red4")) + theme_bw() %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+pk1
+
+log_pk1 <- ggplot(SumStat_pk1, aes(ZT, log_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,24,2), limits=c(0,24)) + scale_y_continuous(name="Log(morphine concentration (ng/mL))") + scale_color_manual(values=c("blue", "red4")) + theme_bw() %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+log_pk1
+
+ggsave(file="pk1.svg", plot=pk1, width=6.5, height=4)
+ggsave(file="log_pk1.svg", plot=log_pk1, width=6.5, height=4)
+
+pk_retina_serum <- merge(pk_retina, pk_serum, all=T)
+pk_retina_serum$log_conc <- log(pk_retina_serum$raw_conc)
+pk_retina_serum_day1 <- subset(pk_retina_serum, day %in% c("1"))
+retina_serum_1inj<- subset(pk_retina_serum_day1, ZT <12)
+pk_retina_serum_day1$ZT <- as.factor(pk_retina_serum_day1$ZT)
+pk_retina_serum_day1$tissue <- as.factor(pk_retina_serum_day1$tissue)
+
+#data analysis for day 1 data
+lm_day1_logzt <- lmer(log(raw_conc) ~ tissue*ZT + (1|animal), data=pk_retina_serum_day1)
+plot(lm_day1_logzt, type=c("p","smooth"), col.line=1)
+lattice::qqmath(lm_day1_logzt)
+Anova(lm_day1_logzt)
+emmeans::emmeans(lm_day1_logzt, pairwise ~ tissue| ZT)
+```
+                                                                                                                                                                                  Data visualization for retina and serum after single injection
+```{r}
+SumStat_pk1inj <- dplyr::summarise(group_by(retina_serum_1inj, ZT, tissue, day),
+n = n(),
+mean_conc = mean(raw_conc),
+sd_conc = sd(raw_conc),
+se_conc = sd_conc/sqrt(n),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n),
+log_conc = mean(log(raw_conc)),
+sd_conc_log = sd(log(raw_conc)),
+se_conc_log = sd_conc_log/sqrt(n),
+log_conc_wt = mean(log(conc_wt)),
+sd_conc_wt_log = sd(log(conc_wt)),
+)
+
+knitr::kable(SumStat_pk1inj)
+
+serum_retina <- ggplot(SumStat_pk1inj, aes(ZT, mean_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=mean_conc - se_conc, ymax=mean_conc + se_conc, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="Morphine concentration (ng/mL)", limits = c(0,900)) + scale_color_manual(values=c("blue","red4")) + theme_bw()  %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+
+ggplot(SumStat_pk1inj, aes(ZT, mean_conc_wt, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg)") + scale_color_manual(values=c("blue","red4"))
+
+log_serum_retina <- ggplot(SumStat_pk1inj, aes(ZT, log_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="log(morphine concentration (ng/mL))", limits = c(0,8)) + scale_color_manual(values=c("blue","red4")) + theme_bw()  %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+log_serum_retina 
+
+ggplot(SumStat_pk1inj, aes(ZT, log_conc_wt, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=log_conc_wt - sd_conc_wt_log, ymax=log_conc_wt + sd_conc_wt_log, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="log(morphine concentration per mg tissue (ng/mg))", limits = c(-4,8)) + scale_color_manual(values=c("blue","red4")) + theme_bw()
+
+ggsave(file="serum_retina.svg", plot=serum_retina, width=6.5, height=4)
+ggsave(file="log_serum_retina.svg", plot=log_serum_retina, width=6.5, height=4)
+#ggsave("serum_retina.pdf", serum_retina)
+#ggsave("log_serum_retina.pdf", log_serum_retina)
+
+ggarrange(serum_retina, log_serum_retina, ncol = 1, nrow = 2)
+
+retina_serum_1inj$ZT <- as.factor(retina_serum_1inj$ZT) 
+retina_serum_1inj$log_conc <- log(retina_serum_1inj$raw_conc)
+lm_1inj_log <- lm(log(raw_conc) ~ ZT*tissue, data=retina_serum_1inj)
+plot(lm_1inj_log)
+Anova(lm_1inj_log)
+emmeans::emmeans(lm_1inj_log, pairwise ~ tissue| ZT)
+shapiro.test(retina_serum_1inj$log_conc)
+leveneTest(log(raw_conc) ~ ZT*tissue, data = retina_serum_1inj)
+
+#lmer model accounts for sample matching (the fact that each pair of retina and serum samples were taken from the same animal)
+lmer_1inj_log <- lmer(log(raw_conc) ~ ZT*tissue+(1|animal), data=retina_serum_1inj)
+plot(lmer_1inj_log, type=c("p","smooth"), col.line=1)
+lattice::qqmath(lmer_1inj_log)
+Anova(lmer_1inj_log)
+emmeans::emmeans(lmer_1inj_log, pairwise ~ tissue| ZT)
+```
+
+
+Data visualization and statistics for retina only after single injection
+```{r}
+SumStat_pk1injr <- subset(SumStat_pk1inj, tissue %in% c("retina"))
+SumStat_pk1injr                   
+retina_serum_1inj$ZT <- as.factor(retina_serum_1inj$ZT)
+
+retina <- ggplot(SumStat_pk1injr, aes(ZT, mean_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=mean_conc - se_conc, ymax=mean_conc + se_conc, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="Morphine concentration (ng/mL)", limits=c(0,900)) + scale_color_manual(values=c("blue")) + theme_bw()  %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+retina
+
+log_retina <- ggplot(SumStat_pk1injr, aes(ZT, log_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="log(morphine concentration (ng/mL))", limits = c(0,8)) + scale_color_manual(values=c("blue")) + theme_bw()  %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+log_retina
+
+ggsave(file="retina.svg", plot=retina, width=6.5, height=4)
+ggsave(file="log_retina.svg", plot=log_retina, width=6.5, height=4)
+#ggsave("serum.pdf", serum)
+#ggsave("log_serum.pdf", log_serum)
+
+retina_1injr <- subset(retina_serum_1inj,  tissue %in% c("retina"))
+retina_1injr$log_conc <- log(retina_1injr$raw_conc)
+lm_1injr <- lm(raw_conc ~ ZT, data=retina_1injr)
+plot(lm_1injr)
+Anova(lm_1injr)
+emoout <- emmeans::emmeans(lm_1injr, pairwise ~ ZT)
+emoout
+multcomp::cld(emoout$emmeans)
+shapiro.test(retina_1injr$raw_conc)
+leveneTest(raw_conc ~ ZT, data = retina_1injr)
+
+#log concentrations to try and correct the issues with normality/unequal variance
+lm_1injr_log <- lm(log(raw_conc) ~ ZT, data=retina_1injr)
+plot(lm_1injr_log)
+Anova(lm_1injr_log)
+emooutlog<- emmeans::emmeans(lm_1injr_log, pairwise ~ ZT)
+emooutlog
+multcomp::cld(emooutlog$emmeans)
+shapiro.test(retina_1injr$log_conc)
+leveneTest(log(raw_conc) ~ ZT, data = retina_1injr)
+```
+
+Data visualization and statistics for serum only after single injection
+```{r}
+SumStat_pk1injs <- subset(SumStat_pk1inj, tissue %in% c("serum"))
+SumStat_pk1injs                   
+retina_serum_1inj$ZT <- as.factor(retina_serum_1inj$ZT)
+
+serum <- ggplot(SumStat_pk1injs, aes(ZT, mean_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=mean_conc - se_conc, ymax=mean_conc + se_conc, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="Morphine concentration (ng/mL)", limits = c(0,900)) + scale_color_manual(values="red4")  + theme_bw()  %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+serum
+
+log_serum <- ggplot(SumStat_pk1injs, aes(ZT, log_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="log(morphine concentration (ng/mL))", limits = c(0,8)) + scale_color_manual(values="red4") + theme_bw() %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+log_serum
+
+ggsave(file="serum.svg", plot=serum, width=6.5, height=4)
+ggsave(file="log_serum.svg", plot=log_serum, width=6.5, height=4)
+#ggsave("retina.pdf", retina)
+#ggsave("log_retina.pdf", log_retina)
+
+retina_1injs <- subset(retina_serum_1inj,  tissue %in% c("serum"))
+retina_1injs$log_conc <- log(retina_1injs$raw_conc)
+lm_1injs <- lm(raw_conc ~ ZT, data=retina_1injs)
+plot(lm_1injs)
+
+#log concentrations to try and correct the issues with normality/unequal variance
+lm_1injs_log <- lm(log(raw_conc) ~ ZT, data=retina_1injs)
+plot(lm_1injs_log)
+Anova(lm_1injs_log)
+emooutlogs <- emmeans::emmeans(lm_1injs_log, pairwise ~ ZT)
+multcomp::cld(emooutlogs$emmeans)
+shapiro.test(retina_1injs$log_conc)
+leveneTest(log(raw_conc) ~ ZT, data = retina_1injs)
+```
+
+Comparing morphine concentrations in retina and serum after 1 injection and 2 injections.
+```{r}
+pk_retina_serum_day1 <- subset(pk_retina_serum, day %in% c("1"))
+pk_retina_serum_1_11 <- subset(pk_retina_serum_day1, ZT %in% c("1", "11", "13", "23") )
+pk_retina_serum_1_11 <- dplyr::mutate(pk_retina_serum_1_11, injections= ifelse(ZT>12, 2, 1))
+pk_retina_serum_1_11 <- dplyr::mutate(pk_retina_serum_1_11, hours = ifelse(ZT == 1 | ZT == 13, 1, 11))
+pk_retina_serum_1_11$hours <- as.factor(pk_retina_serum_1_11$hours)
+pk_retina_serum_1_11$injections <- as.factor(pk_retina_serum_1_11$injections)
+pk_retina_serum_1_11$ZT <- as.factor(pk_retina_serum_1_11$ZT)
+
+#fit model to compare ZTs*tissue against each other for day 1
+lm_1_logzt <- lmer(log(raw_conc) ~ tissue*ZT + (1|animal), data=pk_retina_serum_1_11)
+plot(lm_1_logzt, type=c("p","smooth"), col.line=1)
+lattice::qqmath(lm_1_logzt)
+Anova(lm_1_logzt)
+emmeans::emmeans(lm_1_logzt, pairwise ~ tissue| ZT)
+
+#fit model to compare injection #, hours post-injections and tissue against each other for day 1
+lmer_1_loginj <- lmer(log(raw_conc) ~ tissue*hours*injections + (1|animal), data=pk_retina_serum_1_11)
+plot(lmer_1_loginj, type=c("p","smooth"), col.line=1)
+lattice::qqmath(lmer_1_loginj)
+Anova(lmer_1_loginj)
+emmeans::emmeans(lmer_1_loginj, pairwise ~ injections| hours*tissue)
+
+SumStat_pk1_11 <- dplyr::summarise(group_by(pk_retina_serum_1_11, ZT, tissue, day, hours, injections),
+n = n(),
+mean_conc = mean(raw_conc),
+sd_conc = sd(raw_conc),
+se_conc = sd_conc/sqrt(n),
+log_conc = mean(log(raw_conc)),
+sd_conc_log = sd(log(raw_conc)),
+se_conc_log = sd_conc_log/sqrt(n),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n),
+mean_wt = mean(body_wt),
+sd_wt = sd(body_wt),
+mean_dose = mean(dose),
+sd_dose = sd(dose),
+)
+
+SumStat_pk1_11
+
+SumStat_pk1_11$ZT <- as.factor(SumStat_pk1_11$ZT)
+SumStat_pk1_11$hours <- as.factor(SumStat_pk1_11$hours)
+SumStat_pk1_11$injections <- as.factor(SumStat_pk1_11$injections)
+SumStat_pk1_11$tissue <- as.factor(SumStat_pk1_11$tissue)
+pk_retina_serum_1_11$ZT <- as.factor(pk_retina_serum_1_11$ZT)
+
+one_11 <- ggplot() + 
+  geom_bar(data=SumStat_pk1_11, aes(x=ZT, y=mean_conc, fill=tissue), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk1_11, aes(x=ZT, ymin=mean_conc - se_conc, ymax=mean_conc + se_conc, fill=tissue), position=position_dodge(width=0.5), width=.2,) + 
+  geom_point(data=pk_retina_serum_1_11, aes(x=ZT, y=raw_conc, fill=tissue), position=position_dodge(width=0.5)) + 
+  scale_y_continuous(name="Morphine concentration (ng/mL)") +
+  scale_fill_manual(values=c("blue", "red4")) + theme_bw() 
+
+log_one_11 <- ggplot() + 
+  geom_bar(data=SumStat_pk1_11, aes(x=ZT, y=log_conc, fill=tissue), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk1_11, aes(x=ZT,ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill=tissue), position=position_dodge(width=0.5), width=.2,) + 
+  geom_point(data=pk_retina_serum_1_11, aes(x=ZT, y=log_conc, fill=tissue), position=position_dodge(width=0.5)) + 
+  scale_y_continuous(name="log(Morphine concentration (ng/mL))", limits = c(0,10)) +
+  scale_fill_manual(values=c("blue", "red4")) +
+  xlab("Zeitgeber Time (ZT)") + theme_bw() %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+
+ggplot() + 
+  geom_bar(data=SumStat_pk1_11, aes(x=hours, y=mean_conc, fill=injections), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk1_11, aes(x=hours,ymin=mean_conc - se_conc, ymax=mean_conc + se_conc, fill=injections), position=position_dodge(width=0.5), width=.2,) + 
+  geom_point(data=pk_retina_serum_1_11, aes(x=hours, y=raw_conc, fill=injections), position=position_dodge(width=0.5)) +facet_wrap(~tissue) +
+  scale_y_continuous(name="log(Morphine concentration (ng/mL))") + theme_bw() + scale_fill_manual(values=c("grey84", "grey43")) +
+  xlab("Hours after each i.p. morphine injection")
+
+one_two <- ggplot() + 
+  geom_bar(data=SumStat_pk1_11, aes(x=hours, y=log_conc, fill=injections), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk1_11, aes(x=hours,ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill=injections), position=position_dodge(width=0.5), width=.2,) + 
+  geom_point(data=pk_retina_serum_1_11, aes(x=hours, y=log_conc, fill=injections), position=position_dodge(width=0.5)) + facet_wrap(~tissue) +
+  scale_y_continuous(name="log(Morphine concentration (ng/mL))", limits = c(0,10)) + theme_bw() + scale_fill_manual(values=c("grey84", "grey43")) +
+  xlab("Hours after each i.p. morphine injection")
+
+log_one_two <- ggplot() + 
+  geom_bar(data=SumStat_pk1_11, aes(x=hours, y=log_conc, fill=injections), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk1_11, aes(x=hours,ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill=injections), position=position_dodge(width=0.5), width=.2,) + 
+  geom_point(data=pk_retina_serum_1_11, aes(x=hours, y=log_conc, fill=injections), position=position_dodge(width=0.5)) + 
+  facet_grid(~factor(tissue, levels=c('serum','retina'))) +
+  scale_y_continuous(name="log(Morphine concentration (ng/mL))", limits = c(0,10)) + scale_fill_manual(values=c("grey84", "grey43")) +
+  xlab("Hours after each i.p. morphine injection") + theme_bw () %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+
+log_one_11
+log_one_two
+
+ggsave(file="log_one_11.svg", plot=log_one_11, width=6, height=4)
+ggsave(file="log_one_two.svg", plot=log_one_two, width=6, height=4)
+
+#ggsave("log_one_11.pdf", log_one_11)
+#ggsave("log_one_two.pdf", log_one_two)
+```
+Comparing morphine concentrations in retina and serum after 1 , 6 and 13 days of treatment with i.p morphine injections: ZT1 and ZT11.
+```{r}
+
+pk_retina_serum_1_11_6 <- subset(pk_retina_serum, ZT %in% c("1", "11"))
+pk_retina_serum_1_11_6$ZT <- as.factor(pk_retina_serum_1_11_6$ZT)
+pk_retina_serum_1_11_6$day <- as.factor(pk_retina_serum_1_11_6$day)
+pk_retina_serum_1_11_6$tissue <- as.factor(pk_retina_serum_1_11_6$tissue)
+pk_retina_serum_1_11_6
+lm_1_11 <- lmer(log(raw_conc) ~ ZT*tissue*day+(1|animal), data=pk_retina_serum_1_11_6)
+plot(lm_1_11, type=c("p","smooth"), col.line=1)
+lattice::qqmath(lm_1_11)
+Anova(lm_1_11)
+emmeans::emmeans(lm_1_11, pairwise ~ tissue | ZT*day)
+emmeans::emmeans(lm_1_11, pairwise ~ ZT | day*tissue)
+emmeans::emmeans(lm_1_11, pairwise ~ day | ZT*tissue)
+
+SumStat_pk1_11_6 <- dplyr::summarise(group_by(pk_retina_serum_1_11_6, ZT, tissue, day),
+n = n(),
+mean_conc = mean(raw_conc),
+sd_conc = sd(raw_conc),
+se_conc = sd_conc/sqrt(n),
+log_conc = mean(log(raw_conc)),
+sd_conc_log = sd(log(raw_conc)),
+se_conc_log = sd_conc_log/sqrt(n),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n),
+mean_wt = mean(body_wt),
+sd_wt = sd(body_wt),
+mean_dose = mean(dose),
+sd_dose = sd(dose),
+)
+
+SumStat_pk1_11_6$ZT <- as.factor(SumStat_pk1_11_6$ZT)
+SumStat_pk1_11_6$day<- as.factor(SumStat_pk1_11_6$day)
+SumStat_pk1_11_6$tissue<- as.factor(SumStat_pk1_11_6$tissue)
+SumStat_pk1_11_6
+
+ggplot() + 
+  geom_bar(data=SumStat_pk1_11_6, aes(x=ZT, y=mean_conc, fill=tissue), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk1_11_6, aes(x=ZT,ymin=mean_conc - se_conc, ymax=mean_conc + se_conc, fill=tissue), position=position_dodge(width=0.5), width=.2,) + 
+  geom_point(data=pk_retina_serum_1_11_6, aes(x=ZT, y=raw_conc, fill=tissue), position=position_dodge(width=0.5)) + 
+  facet_wrap(~day) +
+  scale_y_continuous(name="Morphine concentration (ng/mL)") +
+  scale_fill_manual(values=c("blue", "red4")) + theme_bw()
+
+ggplot() + 
+  geom_bar(data=SumStat_pk1_11_6, aes(x=ZT, y=log_conc, fill=tissue), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk1_11_6, aes(x=ZT,ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill=tissue), position=position_dodge(width=0.5), width=.2,) + 
+  geom_point(data=pk_retina_serum_1_11_6, aes(x=ZT, y=log_conc, fill=tissue), position=position_dodge(width=0.5)) + 
+  facet_wrap(~day) +
+  scale_y_continuous(name="log(Morphine concentration (ng/mL))") +
+  scale_fill_manual(values=c("blue", "red4")) + theme_bw()
+
+ggplot() + 
+  geom_bar(data=SumStat_pk1_11_6, aes(x=day, y=mean_conc, fill=ZT), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk1_11_6, aes(x=day,ymin=mean_conc - se_conc, ymax=mean_conc + se_conc, fill=ZT), position=position_dodge(width=0.5), width=.2,) + 
+  geom_point(data=pk_retina_serum_1_11_6, aes(x=day, y=raw_conc, fill=ZT), position=position_dodge(width=0.5)) + 
+  facet_grid(~factor(tissue, levels=c('serum','retina'))) +
+  scale_y_continuous(name="Morphine concentration (ng/mL)") +
+  scale_fill_manual(values=c("slategray1", "slategray4")) + theme_bw()
+
+log_chronic_retina1 <- ggplot() + 
+  geom_bar(data=SumStat_pk1_11_6, aes(x=day, y=log_conc, fill=ZT), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk1_11_6, aes(x=day,ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill=ZT), position=position_dodge(width=0.5), width=.2,) + 
+  geom_point(data=pk_retina_serum_1_11_6, aes(x=day, y=log_conc, fill=ZT), position=position_dodge(width=0.5)) +  facet_grid(~factor(tissue, levels=c('serum','retina'))) + xlab("Days of morphine treatment") +
+  scale_y_continuous(name="log(Morphine concentration (ng/mL))", limits = c(0,10)) +
+  scale_fill_manual(values=c("slategray1", "slategray4")) + theme_bw() %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+
+ggplot() + 
+  geom_bar(data=SumStat_pk1_11_6, aes(x=ZT, y=mean_conc, fill=day), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk1_11_6, aes(x=ZT,ymin=mean_conc - se_conc, ymax=mean_conc + se_conc, fill=day), position=position_dodge(width=0.5), width=.2,) + 
+  geom_point(data=pk_retina_serum_1_11_6, aes(x=ZT, y=raw_conc, fill=day), position=position_dodge(width=0.5)) + 
+  facet_grid(~factor(tissue, levels=c('serum','retina'))) +
+  scale_y_continuous(name="Morphine concentration (ng/mL)") +
+  scale_fill_manual(values=c("lightblue","dodgerblue", "blue")) + theme_bw()
+
+log_chronic_retina2 <- ggplot() + 
+  geom_bar(data=SumStat_pk1_11_6, aes(x=ZT, y=log_conc, fill=day), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk1_11_6, aes(x=ZT,ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill=day), position=position_dodge(width=0.5), width=.2,) + 
+  geom_point(data=pk_retina_serum_1_11_6, aes(x=ZT, y=log_conc, fill=day), position=position_dodge(width=0.5)) + 
+  facet_grid(~factor(tissue, levels=c('serum','retina'))) +
+  scale_y_continuous(name="log(Morphine concentration (ng/mL))", limits = c(0,10)) +
+  scale_fill_manual(values=c("lightblue","dodgerblue", "blue")) + xlab("Zeitgeber Time (ZT)") + theme_bw() %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+
+log_chronic_retina1
+log_chronic_retina2
+
+ggsave(file="log_chronic_retina1.svg", plot=log_chronic_retina1, width=6, height=4)
+ggsave(file="log_chronic_retina2.svg", plot=log_chronic_retina2, width=6, height=4)
+
+#ggsave("log_chronic_retina1.pdf", log_chronic_retina1)
+#ggsave("log_chronic_retina2.pdf", log_chronic_retina2)
+```
+
+Comparing morphine concentrations in retina and serum after 1 and 13 days of treatment with i.p morphine injections: ZT2 and ZT9.
+```{r}
+retina_serum_2_9 <- subset(pk_retina_serum, ZT %in% c("2", "9"))
+retina_serum_2_9$day <- as.factor(retina_serum_2_9$day)
+retina_serum_2_9$ZT <- as.factor(retina_serum_2_9$ZT)
+retina_serum_2_9
+lm_2_9 <- lmer(log(raw_conc) ~ ZT*tissue*day+(1|animal), data=retina_serum_2_9)
+plot(lm_2_9, type=c("p","smooth"), col.line=1)
+lattice::qqmath(lm_2_9)
+Anova(lm_2_9)
+emmeans::emmeans(lm_2_9, pairwise ~ tissue | ZT*day)
+emmeans::emmeans(lm_2_9, pairwise ~ ZT | day*tissue)
+emmeans::emmeans(lm_2_9, pairwise ~ day | ZT*tissue)
+
+SumStat_pk2_9 <- subset(SumStat_pk, ZT %in% c("2", "9"))
+SumStat_pk2_9$ZT <- as.factor(SumStat_pk2_9$ZT)
+SumStat_pk2_9$day<- as.factor(SumStat_pk2_9$day)
+
+ggplot(data=SumStat_pk2_9, aes(x=day, y=mean_conc, fill=ZT)) + geom_bar(stat="identity", position=position_dodge(width=0.5), width=0.5)+ geom_errorbar(aes(ymin=mean_conc - se_conc, ymax=mean_conc + se_conc), position=position_dodge(width=0.5), width=.2) + scale_y_continuous(name="Morphine concentration (ng/mL)") + facet_wrap(~tissue) + scale_fill_manual(values=c("slategray1", "slategray4")) +theme_bw()
+
+ggplot(data=SumStat_pk2_9, aes(x=day, y=log_conc, fill=ZT)) + geom_bar(stat="identity", position=position_dodge(width=0.5), width=0.5)+ geom_errorbar(aes(ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log), position=position_dodge(width=0.5), width=.2) + scale_y_continuous(name="log(morphine concentration (ng/mL)", limits = c(0,10)) + facet_wrap(~tissue) + theme_bw() + scale_fill_manual(values=c("slategray1", "slategray4")) 
+
+ggplot() + 
+  geom_bar(data=SumStat_pk2_9, aes(x=day, y=mean_conc, fill=ZT), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk2_9, aes(x=day,ymin=mean_conc - se_conc, ymax=mean_conc + se_conc, fill=ZT), position=position_dodge(width=0.5), width=.2,) +
+  geom_point(data=retina_serum_2_9, aes(x=day, y=raw_conc, fill=ZT), position=position_dodge(width=0.5)) +
+  facet_grid(~factor(tissue, levels=c('serum','retina'))) +
+  scale_y_continuous(name="Morphine concentration (ng/mL)") +
+  scale_fill_manual(values=c("slategray1", "slategray4")) + theme_bw()
+
+log_chronic_retina29_1 <-ggplot() + 
+  geom_bar(data=SumStat_pk2_9, aes(x=day, y=log_conc, fill=ZT), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk2_9, aes(x=day,ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill=ZT), position=position_dodge(width=0.5), width=.2,) + 
+  geom_point(data=retina_serum_2_9, aes(x=day, y=log_conc, fill=ZT), position=position_dodge(width=0.5)) + 
+  facet_grid(~factor(tissue, levels=c('serum','retina'))) +
+  scale_y_continuous(name="log(Morphine concentration (ng/mL))", limits = c(0,10)) +
+  scale_fill_manual(values=c("slategray1", "slategray4")) + theme_bw() + xlab("Day of Morphine treatment") + theme_bw() %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+
+ggplot() + 
+  geom_bar(data=SumStat_pk2_9, aes(x=ZT, y=mean_conc, fill=day), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk2_9, aes(x=ZT,ymin=mean_conc - se_conc, ymax=mean_conc + se_conc, fill=day), position=position_dodge(width=0.5), width=.2,) +
+  geom_point(data=retina_serum_2_9, aes(x=ZT, y=raw_conc, fill=day), position=position_dodge(width=0.5)) +
+  facet_grid(~factor(tissue, levels=c('serum','retina'))) +
+  scale_y_continuous(name="Morphine concentration (ng/mL)") +
+  scale_fill_manual(values=c("lightblue", "blue")) + theme_bw()
+
+log_chronic_retina29_2 <-ggplot() + 
+  geom_bar(data=SumStat_pk2_9, aes(x=ZT, y=log_conc, fill=day), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pk2_9, aes(x=ZT,ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill=day), position=position_dodge(width=0.5), width=.2,) + 
+  geom_point(data=retina_serum_2_9, aes(x=ZT, y=log_conc, fill=day), position=position_dodge(width=0.5)) + 
+  facet_grid(~factor(tissue, levels=c('serum','retina'))) +
+  scale_y_continuous(name="log(Morphine concentration (ng/mL))", limits = c(0,10)) +
+  scale_fill_manual(values=c("lightblue", "blue")) + theme_bw() + xlab("Zeitgeber Time (ZT)") + theme_bw() %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+
+log_chronic_retina29_1
+log_chronic_retina29_2
+
+ggsave(file="log_chronic_retina29_1.svg", plot=log_chronic_retina29_1, width=6, height=4)
+ggsave(file="log_chronic_retina29_2.svg", plot=log_chronic_retina29_2, width=6, height=4)
+
+#ggsave("log_chronic_retina29_1.pdf", log_chronic_retina29_1)
+#ggsave("log_chronic_retina29_2.pdf", log_chronic_retina29_2)
+```
+
+Extra data visualizations for morphine concentrations in retina and serum per body weight after 1 , 6 and 13 days of treatment with i.p morphine injections: ZT1 and ZT11.
+```{r}
+SumStat_pk1_11_1 <- subset(SumStat_pk1_11, ZT %in% c("1", "11"))
+SumStat_pk1_11_6$ZT <- as.factor(SumStat_pk1_11_6$ZT)
+SumStat_pk1_11_6$day<- as.factor(SumStat_pk1_11_6$day)
+
+ggplot(data=SumStat_pk1_11_6, aes(x=ZT, y=mean_conc_wt, fill=tissue)) + geom_bar(stat="identity", position=position_dodge(width=0.5), width=0.5)+ geom_errorbar(aes(ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt), position=position_dodge(width=0.5), width=.2) + scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg)") + facet_wrap(~day) +  scale_fill_manual(values=c("blue", "red4"))
+
+ggplot(data=SumStat_pk1_11_6, aes(x=ZT, y=mean_conc_wt, fill=day)) + geom_bar(stat="identity", position=position_dodge(width=0.5), width=0.5)+ geom_errorbar(aes(ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt), position=position_dodge(width=0.5), width=.2) + scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg)") + facet_wrap(~tissue) + scale_fill_manual(values=c("lightblue","dodgerblue", "blue"))
+
+ggplot(data=SumStat_pk1_11_6, aes(x=day, y=mean_conc_wt, fill=ZT)) + geom_bar(stat="identity", position=position_dodge(width=0.5), width=0.5)+ geom_errorbar(aes(ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt), position=position_dodge(width=0.5), width=.2) + scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg)") + facet_wrap(~tissue) + scale_fill_manual(values=c("slategray1", "slategray4"))
+
+ggplot(data=SumStat_pk1_11_6, aes(x=day, y=mean_conc_wt, fill=tissue)) + geom_bar(stat="identity", position=position_dodge(width=0.5), width=0.5)+ geom_errorbar(aes(ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt), position=position_dodge(width=0.5), width=.2) + scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg)") + facet_wrap(~ZT) +  scale_fill_manual(values=c("blue", "red4"))
+
+```
+

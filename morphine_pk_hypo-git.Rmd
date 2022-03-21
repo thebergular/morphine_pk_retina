@@ -1,0 +1,476 @@
+---
+title: "Untitled"
+author: "nbergum"
+date: "3/20/2022"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(car)
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+library(lme4)
+```
+
+Hypothalamus vs retina
+```{r}
+rt_pk <- read.csv("C:\\Users\\nikbe\\Documents\\Morphine Mass Spec\\morphine_ht_pk_retina1.csv", fileEncoding = 'UTF-8-BOM')
+pk_rt <- rt_pk %>% 
+  group_by(ZT,tissue, day, animal) %>% 
+  dplyr::summarise(raw_conc = mean(raw_conc), tissue_wt = mean(retina_wt),
+                   body_wt= mean(body_wt), dose= mean(dose))
+pk_rt$conc_wt <- (pk_rt$raw_conc/pk_rt$tissue_wt)
+#View(pk_rt)
+ht_pk <- read.csv("C:\\Users\\nikbe\\Documents\\Morphine Mass Spec\\morphine_ht_pk_hypo1.csv", fileEncoding = 'UTF-8-BOM')
+ht_pk
+pk_ht <- ht_pk %>% 
+  group_by(ZT,tissue, day, animal) %>% 
+  dplyr::summarise(raw_conc = mean(raw_conc), tissue_wt = mean(ht_wt),
+                   body_wt= mean(body_wt), dose= mean(dose))
+pk_ht$conc_wt <- (pk_ht$raw_conc/pk_ht$tissue_wt)
+#View(pk_ht)
+pkht <- merge(pk_ht, pk_rt, all=T)
+pkht$log_ct <- log(pkht$conc_wt)
+#View(pkht)
+SumStat_pkht <- dplyr::summarise(group_by(pkht, ZT, tissue, day),
+n = n(),
+mean_conc = mean(raw_conc),
+sd_conc = sd(raw_conc),
+se_conc = sd_conc/sqrt(n),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n),
+log_conc = mean(log(conc_wt)),
+sd_conc_log = sd(log(conc_wt)),
+se_conc_log = sd_conc_log/sqrt(n),
+mean_wt = mean(body_wt),
+sd_wt = sd(body_wt),
+mean_dose = mean(dose),
+sd_dose = sd(dose),
+)
+SumStat_pkht$ZT <- as.factor(SumStat_pkht$ZT)
+SumStat_pkht
+write.table(SumStat_pkht, file = "C:\\Users\\nikbe\\Documents\\Morphine Mass Spec\\Figures\\SumStats_pk_hypo_retina.csv", sep=",", row.names=FALSE)
+```
+Hypothalamus morphine levels after a single injection.
+```{r}
+pk_ht$log_ct <- log(pk_ht$conc_wt)
+pk_ht1 <- subset(pk_ht, day %in% c("1"))
+pk_ht1h <- subset(pk_ht1, ZT < 12)
+pk_ht1h <- filter(pk_ht1h, animal != "6PM 21M")
+
+SumStat_pkhypo <- dplyr::summarise(group_by(pk_ht1h, ZT, tissue, day),
+n = n(),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n),
+log_conc = mean(log(conc_wt)),
+sd_conc_log = sd(log(conc_wt)),
+se_conc_log = sd_conc_log/sqrt(n),
+)
+
+pk_ht1h$ZT <- as.factor(pk_ht1h$ZT)
+lm_1ht <- lm(log(conc_wt) ~ ZT, data=pk_ht1h)
+plot(lm_1ht)
+Anova(lm_1ht)
+emout <- emmeans::emmeans(lm_1ht, pairwise ~ ZT)
+emout
+multcomp::cld(emout$emmeans)
+
+SumStat_pkhypo
+
+ggplot(SumStat_pkhypo, aes(ZT, mean_conc_wt, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg)") + scale_color_manual(values=c("blue")) + theme_bw() + scale_color_manual(values=c("goldenrod2"))
+
+hypo <- ggplot(SumStat_pkhypo, aes(ZT, log_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg)") + scale_color_manual(values=c("blue")) + scale_color_manual(values=c("goldenrod2")) + theme(text = element_text(size = 12), axis.text=element_text(size=12),  legend.text=element_text(size=12))
+hypo
+```
+Raw concentrations for serum/retina/HT: Comparing hypothalamus, retina and morphine concentrations after a single i.p. morphine injection
+```{r}
+ht_pks <- read.csv("C:\\Users\\nikbe\\Documents\\Morphine Mass Spec\\morphine_ht_pk_serum1.csv", fileEncoding = 'UTF-8-BOM')
+pk_hts <- ht_pks %>% 
+  group_by(ZT,tissue, day, animal) %>% 
+  dplyr::summarise(raw_conc = mean(raw_conc), tissue_wt = mean(ht_wt),
+                   body_wt= mean(body_wt), dose= mean(dose))
+pk_hts$conc_wt <- (pk_hts$raw_conc/102.4)
+pk_hts
+pkht_serum <- merge(pkht, pk_hts, all=T)
+pkht_serum$log_ct <- log(pkht_serum$conc_wt)
+pkht_serum <- filter(pkht_serum, animal != "6PM 21M")
+pkht_serum
+
+SumStat_pkht_serum <- dplyr::summarise(group_by(pkht_serum, ZT, tissue, day),
+n = n(),
+mean_conc = mean(raw_conc),
+sd_conc = sd(raw_conc),
+se_conc = sd_conc/sqrt(n),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n),
+log_concr = mean(log(raw_conc)),
+sd_conc_logr = sd(log(raw_conc)),
+se_conc_logr = sd_conc_logr/sqrt(n),
+log_conc = mean(log(conc_wt)),
+sd_conc_log = sd(log(conc_wt)),
+se_conc_log = sd_conc_log/sqrt(n),
+mean_wt = mean(body_wt),
+sd_wt = sd(body_wt),
+mean_dose = mean(dose),
+sd_dose = sd(dose),
+)
+
+knitr::kable(SumStat_pkht_serum)
+write.table(SumStat_pkht_serum, file = "C:\\Users\\nikbe\\Documents\\Morphine Mass Spec\\Figures\\SumStats_pk_hypo_retina_serum.csv", sep=",", row.names=FALSE)
+
+#SumStat_pkht_serum$ZT <- as.factor(SumStat_pkht_serum$ZT)
+SumStat_pkht_serum1 <- subset(SumStat_pkht_serum,  day %in% c("1"))
+SumStat_pkht_serum1inj <- subset(SumStat_pkht_serum1, ZT <12)
+
+rt_ht_serum <- ggplot(SumStat_pkht_serum1inj, aes(ZT, mean_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=mean_conc - se_conc, ymax=mean_conc + se_conc, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,11)) + scale_y_continuous(name="Morphine concentration (ng/mL)") + scale_color_manual(values=c("goldenrod2", "blue", "red4")) + theme_bw() %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+rt_ht_serum
+
+log_rt_ht_serum <-ggplot(SumStat_pkht_serum1inj, aes(ZT, log_concr, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=log_concr - se_conc_logr, ymax=log_concr + se_conc_logr, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="log(Morphine concentration ng/mL))") + scale_color_manual(values=c("goldenrod2", "blue", "red4")) + theme_bw() %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+log_rt_ht_serum
+
+ggplot(SumStat_pkht_serum1inj, aes(ZT, mean_conc_wt, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg))") + scale_color_manual(values=c("goldenrod2", "blue", "red4"))
+
+ggplot(SumStat_pkht_serum1inj, aes(ZT, log_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="log(Morphine concentration per mg tissue (ng/mg)))") + scale_color_manual(values=c("goldenrod2", "blue", "red4"))
+
+ggsave(file="rt_ht_serum.svg", plot=rt_ht_serum, width=6, height=4)
+ggsave(file="log_rt_ht_serum.svg", plot=log_rt_ht_serum, width=6, height=4)
+#ggsave("rt_ht_serum.png",rt_ht_serum)
+#ggsave("log_rt_ht_serum.png",log_rt_ht_serum)
+
+pkht_serum <- subset(pkht_serum, ZT < 12)
+
+pkht_serum$ZT <- as.factor(pkht_serum$ZT)
+lm_hts <- lm(log(raw_conc) ~ tissue*ZT, data =pkht_serum)
+plot(lm_hts)
+anova(lm_hts)
+emmeans::emmeans(lm_hts, pairwise ~ tissue| ZT)
+
+#lmer model accounts for sample matching (the fact that each pair of retina and serum samples were taken from the same animal)
+pkht_serum$ZT <- as.factor(pkht_serum$ZT)
+lmer_hts <- lmer(log(raw_conc) ~ tissue*ZT+(1|animal), data =pkht_serum)
+plot(lmer_hts, type=c("p","smooth"), col.line=1)
+lattice::qqmath(lmer_hts)
+anova(lmer_hts)
+emmeans::emmeans(lmer_hts, pairwise ~ tissue| ZT)
+```
+
+Hypothalamus vs. cortex
+```{r}
+ht_cx_pk <- read.csv("C:\\Users\\nikbe\\Documents\\Morphine Mass Spec\\morphinepk_ht_cx.csv", fileEncoding = 'UTF-8-BOM')
+ht_cx_pk
+pk_cx_ht <- ht_cx_pk %>% 
+  group_by(ZT,tissue, day, animal) %>% 
+  dplyr::summarise(raw_conc = mean(raw_conc), tissue_wt = mean(tissue_weight),
+                   body_wt= mean(body_wt), dose= mean(dose))
+pk_cx_ht$conc_wt <- (pk_cx_ht$raw_conc/pk_cx_ht$tissue_wt)
+pk_cx_ht$log_ct <- log(pk_cx_ht$tissue_wt)
+cx <- subset(pk_cx_ht,  tissue == "cortex", conc_wt, drop = T)
+ht <- subset(pk_cx_ht,  tissue == "hypothalamus", conc_wt, drop = T)
+library(PairedData)
+pd <- paired(cx, ht)
+pd
+plot(pd, type = "profile") + theme_bw()
+# compute the difference
+plots <- with(pk_cx_ht, 
+        conc_wt[tissue == "cortex"] - conc_wt[tissue == "hypothalamus"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(plots) # => p-value = 0.1548
+leveneTest(conc_wt ~ tissue, data= pk_cx_ht) # => p-value = 0.3256
+pk_braintt <- t.test(cx, ht, paired = TRUE)
+pk_braintt # => p-value = 0.1832
+
+SumStat_cx_ht <- dplyr::summarise(group_by(pk_cx_ht, ZT, tissue, day),
+n = n(),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n))
+
+ht_cx <- ggplot() +
+  geom_bar(data=SumStat_cx_ht, aes(x=tissue, y=mean_conc_wt, fill=tissue), stat="identity", position=position_dodge(width=0.5), width=0.5)+
+  geom_errorbar(data=SumStat_cx_ht, aes(x=tissue, ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt), position=position_dodge(width=0.5), width=.2) +
+  geom_point(data=pk_cx_ht, aes(x=tissue, y=conc_wt)) +
+  scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg)", limits = c(0,5)) + xlab("Brain region") + scale_fill_manual(values=c("yellow", "goldenrod2")) + theme_bw() %+replace% theme(text = element_text(size = 12), axis.text=element_text(size=12),  legend.text=element_text(size=12))
+ht_cx
+
+ggsave(file="ht_cx.svg", plot=ht_cx, width=6, height=4)
+#ggsave("ht_cx.png",ht_cx)
+```
+
+Single injection: Comparison of hypothalamus vs. retina morphine concentrations per tissue weight after a single i.p. morphine injection. 
+```{r}
+pkht_1 <- subset(pkht, day %in% c("1"))
+pkht_1inj <- subset(pkht_1, ZT < 12)
+#get rid of '0' value to do log transform
+pkht_1inj <- filter(pkht_1inj, animal != "6PM 21M") 
+
+
+SumStat_pkht_1inj <- dplyr::summarise(group_by(pkht_1inj, ZT, tissue, day),
+n = n(),
+mean_conc = mean(raw_conc),
+sd_conc = sd(raw_conc),
+se_conc = sd_conc/sqrt(n),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n),
+log_conc = mean(log(conc_wt)),
+sd_conc_log = sd(log(conc_wt)),
+se_conc_log = sd_conc_log/sqrt(n),
+mean_wt = mean(body_wt),
+sd_wt = sd(body_wt),
+mean_dose = mean(dose),
+sd_dose = sd(dose),
+)
+
+SumStat_pkht_1inj
+
+ht_rt <- ggplot(SumStat_pkht_1inj, aes(ZT, mean_conc_wt, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg))") + scale_color_manual(values=c("goldenrod2", "blue")) + theme_bw() %+replace% theme(text = element_text(size = 12), axis.text=element_text(size=12),  legend.text=element_text(size=12))
+ht_rt
+
+log_ht_rt <- ggplot(SumStat_pkht_1inj, aes(ZT, log_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(linetype="dotted")  + geom_errorbar(aes(ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill = tissue), width=.5) + scale_x_continuous(name="Zeitgeber Time (ZT)", breaks = seq(0,12,1), limits=c(0,12)) + scale_y_continuous(name="log(Morphine concentration per mg tissue (ng/mg))", limits=c(-5,5)) + scale_color_manual(values=c("goldenrod2", "blue")) + theme_bw() %+replace% theme(text = element_text(size = 12), axis.text=element_text(size=12),  legend.text=element_text(size=12))
+log_ht_rt
+
+ggsave(file="ht_rt.svg", plot=ht_rt, width=6, height=4)
+ggsave(file="log_ht_rt.svg", plot=log_ht_rt, width=6, height=4)
+#ggsave("ht_rt.png", ht_rt)
+#ggsave("log_ht_rt.png", log_ht_rt)
+
+pkht_1inj$ZT <- as.factor(pkht_1inj$ZT)
+lmer_ht1 <- lmer(log(conc_wt) ~ tissue*ZT+(1|animal), data =pkht_1inj)
+plot(lmer_ht1, type=c("p","smooth"), col.line=1)
+lattice::qqmath(lmer_ht1)
+anova(lmer_ht1)
+emmeans::emmeans(lmer_ht1, pairwise ~ tissue| ZT)
+```
+
+
+Comparing 1 vs. 2 injections: Comparing hypothalamus vs. retina morphine concentrations per tissue weight after a one or two i.p. morphine injection(s) - 1, 2 and 3 hours after each injection.
+```{r}
+pkht_12 <- subset(pkht_1, ZT %in% c("1","2","3","13","14", "15"))
+pkht_12 <- dplyr::mutate(pkht_12, injections= ifelse(ZT>12, 2, 1))
+pkht_12
+pkht_12$injections <- as.factor(pkht_12$injections)
+pkht_12$log_conc <- log(pkht_12$raw_conc)
+
+pkht_12$ZT <- as.factor(pkht_12$ZT)
+pkht_12
+lmer_ht12 <- lmer(log(conc_wt) ~ tissue*ZT+(1|animal), data =pkht_12)
+plot(lmer_ht12, type=c("p","smooth"), col.line=1)
+lattice::qqmath(lmer_ht12)
+anova(lmer_ht12)
+emmeans::emmeans(lmer_ht12, pairwise ~ tissue| ZT)
+emmeans::emmeans(lmer_ht12, pairwise ~ ZT | tissue)
+
+SumStat_pkht12 <- dplyr::summarise(group_by(pkht_12, ZT, tissue, injections),
+n = n(),
+mean_conc = mean(raw_conc),
+sd_conc = sd(raw_conc),
+se_conc = sd_conc/sqrt(n),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n),
+log_conc = mean(log(conc_wt)),
+sd_conc_log = sd(log(conc_wt)),
+se_conc_log = sd_conc_log/sqrt(n),
+mean_wt = mean(body_wt),
+sd_wt = sd(body_wt),
+mean_dose = mean(dose),
+sd_dose = sd(dose),
+)
+
+
+SumStat_pkht12_1 <- subset(SumStat_pkht12, injections %in% c("1"))
+SumStat_pkht12_2 <- subset(SumStat_pkht12, injections %in% c("2"))
+
+SumStat_pkht12_1$injections <- plyr::revalue(SumStat_pkht12_1$injections, c("1" = "After 1 injection"))
+SumStat_pkht12_2$injections <- plyr::revalue(SumStat_pkht12_2$injections, c("2" = "After 2 injections"))
+
+
+ht_rt12_1 <- ggplot(SumStat_pkht12_1, aes(ZT, mean_conc_wt, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(aes(group=tissue), linetype="dotted")  + geom_errorbar(aes(ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt, fill = tissue), width=.5) +  scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg))", limits = c(0,50)) + scale_color_manual(values=c("goldenrod2", "blue")) + facet_wrap(~injections)  + xlab("Zeitgeber Time (ZT)") + facet_wrap(~injections) + theme_bw() %+replace% theme(text = element_text(face="bold"), axis.text=element_text(size=11),  legend.text=element_text(size=11))
+#ht_rt12_1
+
+ht_rt12_2 <- ggplot(SumStat_pkht12_2, aes(ZT, mean_conc_wt, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(aes(group=tissue), linetype="dotted")  + geom_errorbar(aes(ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt, fill = tissue), width=.5) +  scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg))", limits = c(0,50)) + scale_color_manual(values=c("goldenrod2", "blue")) + facet_wrap(~injections)  + xlab("Zeitgeber Time (ZT)") + facet_wrap(~injections) + theme_bw() %+replace% theme(text = element_text(face="bold"), axis.text=element_text(size=11),  legend.text=element_text(size=11))
+#ht_rt12_2
+
+ht_rt12 <- ggarrange(ht_rt12_1, ht_rt12_2 + rremove("ylab"), ncol = 2, common.legend = T)
+ht_rt12
+
+
+log_ht_rt12_1 <- ggplot(SumStat_pkht12_1, aes(ZT, log_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(aes(group=tissue),linetype="dotted")  + geom_errorbar(aes(ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill = tissue), width=.5) +  scale_y_continuous(name="log(Morphine concentration per mg tissue (ng/mg))", limits = c(-1,5)) + scale_color_manual(values=c("goldenrod2", "blue")) + facet_wrap(~injections)  + xlab("Zeitgeber Time (ZT)") + theme_bw() %+replace% theme(text = element_text(size=14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+#log_ht_rt12_1
+
+log_ht_rt12_2 <- ggplot(SumStat_pkht12_2, aes(ZT, log_conc, color=tissue)) + geom_point(stat="identity", position=position_dodge(), size=2) + geom_line(aes(group=tissue),linetype="dotted")  + geom_errorbar(aes(ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill = tissue), width=.5) +  scale_y_continuous(name="log(Morphine concentration per mg tissue (ng/mg))", limits = c(-1,5)) + scale_color_manual(values=c("goldenrod2", "blue")) + facet_wrap(~injections)  + xlab("Zeitgeber Time (ZT)") + theme_bw() %+replace% theme(text = element_text(size=14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+#log_ht_rt12_2
+
+log_ht_rt12 <- ggarrange(log_ht_rt12_1, log_ht_rt12_2 + rremove("ylab"), ncol = 2, common.legend = T)
+log_ht_rt12
+
+ggsave(file="log_ht_rt12.svg", plot=log_ht_rt12, width=6, height=4)
+
+#ggsave("ht_rt12.png", ht_rt12)
+#ggsave("log_ht_rt12.png", log_ht_rt12)
+```
+Comparing day 1 and 6: Comparing hypothalamus vs. retina morphine concentrations per tissue weight after a one or six day(s) of i.p. morphine injection(s) (ZT 1 and ZT 11)
+```{r}
+pkht_1_6i <- subset(pkht, ZT  %in% c("1","11"))
+pkht_1_6i$ZT <- as.factor(pkht_1_6i$ZT)
+pkht_1_6i$day <- as.factor(pkht_1_6i$day)
+pkht_1_6 <- filter(pkht_1_6i, animal != "6PM 21M") #excluding 0 value to allow for log scale data analysis
+pkht_1_6$ZT <- as.factor(pkht_1_6$ZT)
+pkht_1_6$day <- as.factor(pkht_1_6$day)
+lmer_ht16 <- lmer(log(conc_wt) ~ tissue*ZT*day+(1|animal), data =pkht_1_6)
+plot(lmer_ht16, type=c("p","smooth"), col.line=1)
+lattice::qqmath(lmer_ht16)
+anova(lmer_ht16)
+emmeans::emmeans(lmer_ht16, pairwise ~ tissue| ZT*day)
+emmeans::emmeans(lmer_ht16, pairwise ~ ZT| tissue*day)
+emmeans::emmeans(lmer_ht16, pairwise ~ day| ZT*tissue)
+
+#pkht_1_6$day <- plyr::revalue(pkht_1_6$day, c("1" = "After 1 injection", "6" = "After 6 Days morphine"))
+#pkht_1_6i$day <- plyr::revalue(pkht_1_6i$day, c("1" = "After 1 injection", "6" = "After 6 Days morphine"))
+
+SumStat_pkht_16 <- dplyr::summarise(group_by(pkht_1_6, ZT, tissue, day),
+n = n(),
+mean_conc = mean(raw_conc),
+sd_conc = sd(raw_conc),
+se_conc = sd_conc/sqrt(n),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n),
+log_conc = mean(log(conc_wt)),
+sd_conc_log = sd(log(conc_wt)),
+se_conc_log = sd_conc_log/sqrt(n),
+mean_wt = mean(body_wt),
+sd_wt = sd(body_wt),
+mean_dose = mean(dose),
+sd_dose = sd(dose),
+)
+
+SumStat_pkht_16i <- dplyr::summarise(group_by(pkht_1_6i, ZT, tissue, day),
+n = n(),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n),
+)
+
+SumStat_pkht_16i
+
+pkht1 <- ggplot() + 
+  geom_bar(data=SumStat_pkht_16i, aes(x=ZT, y=mean_conc_wt, fill=day), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pkht_16, aes(x=ZT, ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt, fill=day), position=position_dodge(width=0.5), width=.2,) + geom_point(data=pkht_1_6i, aes(x=ZT, y=conc_wt, fill=day), position=position_dodge(width=0.5)) + 
+  scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg)") +
+  facet_wrap(~tissue) +  xlab("Zeitgeber Time (ZT)") +
+  scale_fill_manual(values=c("lightblue","dodgerblue")) + theme_bw()  %+replace% theme(text = element_text(size=14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+pkht1
+
+log_pkht1 <- ggplot() + 
+  geom_bar(data=SumStat_pkht_16, aes(x=ZT, y=log_conc, fill=day), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pkht_16, aes(x=ZT, ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill=day), position=position_dodge(width=0.5), width=.2,) + geom_point(data=pkht_1_6, aes(x=ZT, y=log_ct, fill=day), position=position_dodge(width=0.5)) + 
+  scale_y_continuous(name="log(Morphine concentration per mg tissue (ng/mg))", limits = c(-6,6)) +
+  facet_wrap(~tissue) +  xlab("Zeitgeber Time (ZT)") +
+  scale_fill_manual(values=c("lightblue","dodgerblue")) + theme_bw()  %+replace% theme(text = element_text(size=14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+log_pkht1
+
+pkht2 <- ggplot() + 
+  geom_bar(data=SumStat_pkht_16i, aes(x=ZT, y=mean_conc_wt, fill=tissue), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pkht_16i, aes(x=ZT, ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt, fill=tissue), position=position_dodge(width=0.5), width=.2,) + geom_point(data=pkht_1_6i, aes(x=ZT, y=conc_wt, fill=tissue), position=position_dodge(width=0.5)) + 
+  scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg)") +
+  facet_wrap(~day) + xlab("Zeitgeber Time (ZT)") +
+  scale_fill_manual(values=c("goldenrod2","blue")) + theme_bw() +
+  theme_bw()  %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+pkht2
+
+log_pkht2 <- ggplot() + 
+  geom_bar(data=SumStat_pkht_16, aes(x=ZT, y=log_conc, fill=tissue), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pkht_16, aes(x=ZT, ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill=tissue), position=position_dodge(width=0.5), width=.2,) + geom_point(data=pkht_1_6, aes(x=ZT, y=log_ct, fill=tissue), position=position_dodge(width=0.5)) + 
+  scale_y_continuous(name="log(Morphine concentration per mg tissue (ng/mg))", limits = c(-6,6)) +
+  facet_wrap(~day) +  
+  scale_fill_manual(values=c("goldenrod2","blue")) + theme_bw() +  xlab("Zeitgeber Time (ZT)") +
+  theme_bw()  %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+log_pkht2
+
+ggsave(file="log_pkht2.svg", plot=log_pkht2, width=6, height=4)
+ggsave(file="log_pkht1.svg", plot=log_pkht1, width=6, height=4)
+ggsave(file="pkht2.svg", plot=pkht2, width=6, height=4)
+ggsave(file="pkht1.svg", plot=pkht1, width=6, height=4)
+#ggsave("log_pkht2.png", log_pkht2)
+#ggsave("log_pkht1.png", log_pkht1)
+```
+Comparing day 1 and 13: Comparing hypothalamus vs. retina morphine concentrations per tissue weight after a one or six day(s) of i.p. morphine injection(s) (ZT 2 and ZT 9)
+```{r}
+pkht_1_13 <- subset(pkht, ZT  %in% c("2","9"))
+pkht_1_13$ZT <- as.factor(pkht_1_13$ZT)
+pkht_1_13$day <- as.factor(pkht_1_13$day)
+lmer_ht13 <- lmer(log(conc_wt) ~ tissue*ZT*day+(1|animal), data =pkht_1_13)
+plot(lmer_ht13, type=c("p","smooth"), col.line=1)
+lattice::qqmath(lmer_ht13)
+anova(lmer_ht13)
+emmeans::emmeans(lmer_ht13, pairwise ~ tissue| ZT*day)
+emmeans::emmeans(lmer_ht13, pairwise ~ ZT| tissue*day)
+emmeans::emmeans(lmer_ht13, pairwise ~ day| ZT*tissue)
+
+#pkht_1_13$day <- plyr::revalue(pkht_1_13$day, c("1" = "After 1 injection", "13" = "After 13 days morphine"))
+
+SumStat_pkht_13 <- dplyr::summarise(group_by(pkht_1_13, ZT, tissue, day),
+n = n(),
+mean_conc = mean(raw_conc),
+sd_conc = sd(raw_conc),
+se_conc = sd_conc/sqrt(n),
+mean_conc_wt = mean(conc_wt),
+sd_conc_wt = sd(conc_wt),
+se_conc_wt = sd_conc_wt/sqrt(n),
+log_conc = mean(log(conc_wt)),
+sd_conc_log = sd(log(conc_wt)),
+se_conc_log = sd_conc_log/sqrt(n),
+mean_wt = mean(body_wt),
+sd_wt = sd(body_wt),
+mean_dose = mean(dose),
+sd_dose = sd(dose),
+)
+
+SumStat_pkht_13
+
+ggplot() + 
+  geom_bar(data=SumStat_pkht_13, aes(x=ZT, y=mean_conc_wt, fill=day), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pkht_13, aes(x=ZT, ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt, fill=day), position=position_dodge(width=0.5), width=.2,) + geom_point(data=pkht_1_13, aes(x=ZT, y=conc_wt, fill=day), position=position_dodge(width=0.5)) + 
+  scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg)") +
+  facet_wrap(~tissue) +  xlab("Zeitgeber Time (ZT)") +
+  scale_fill_manual(values=c("lightblue","blue")) + theme_bw()  #%+replace% theme(text = element_text(face="bold"), axis.text=element_text(size=11),  legend.text=element_text(size=11))
+
+log_pkht13 <- ggplot() + 
+  geom_bar(data=SumStat_pkht_13, aes(x=ZT, y=log_conc, fill=day), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pkht_13, aes(x=ZT, ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill=day), position=position_dodge(width=0.5), width=.2,) + geom_point(data=pkht_1_13, aes(x=ZT, y=log_ct, fill=day), position=position_dodge(width=0.5)) + 
+  scale_y_continuous(name="log(Morphine concentration per mg tissue (ng/mg))", limits = c(-6,6)) +
+  facet_wrap(~tissue) +  xlab("Zeitgeber Time (ZT)") +
+  scale_fill_manual(values=c("lightblue","blue")) + theme_bw()  %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+log_pkht13
+
+ggplot() + 
+  geom_bar(data=SumStat_pkht_13, aes(x=ZT, y=mean_conc_wt, fill=tissue), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pkht_13, aes(x=ZT, ymin=mean_conc_wt - se_conc_wt, ymax=mean_conc_wt + se_conc_wt, fill=tissue), position=position_dodge(width=0.5), width=.2,) + geom_point(data=pkht_1_13, aes(x=ZT, y=conc_wt, fill=tissue), position=position_dodge(width=0.5)) + 
+  scale_y_continuous(name="Morphine concentration per mg tissue (ng/mg)") +
+  facet_wrap(~day) + xlab("Zeitgeber Time (ZT)") +
+  scale_fill_manual(values=c("goldenrod2","blue")) + theme_bw() +
+  theme_bw()  %+replace% theme(text = element_text(size = 14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+
+log_pkht2_13 <- ggplot() + 
+  geom_bar(data=SumStat_pkht_13, aes(x=ZT, y=log_conc, fill=tissue), stat="identity", position=position_dodge(width=0.5), width=0.5) +
+  geom_errorbar(data=SumStat_pkht_13, aes(x=ZT, ymin=log_conc - se_conc_log, ymax=log_conc + se_conc_log, fill=tissue), position=position_dodge(width=0.5), width=.2,) + geom_point(data=pkht_1_13, aes(x=ZT, y=log_ct, fill=tissue), position=position_dodge(width=0.5)) + 
+  scale_y_continuous(name="log(Morphine concentration per mg tissue (ng/mg))", limits = c(-6,6)) +
+  facet_wrap(~day) +  
+  scale_fill_manual(values=c("goldenrod2","blue")) + theme_bw() +  xlab("Zeitgeber Time (ZT)") +
+  theme_bw()  %+replace% theme(text = element_text(size=14), axis.text=element_text(size=14),  legend.text=element_text(size=14))
+log_pkht2_13
+
+ggsave(file="log_pkht2_13.svg", plot=log_pkht2_13, width=6, height=4)
+ggsave(file="log_pkht13.svg", plot=log_pkht13, width=6, height=4)
+
+#ggsave("log_pkht13.png", log_pkht13)
+#ggsave("log_pkht2_13.png", log_pkht2_13)
+```
+
