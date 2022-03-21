@@ -1,0 +1,74 @@
+---
+title: "pgp_qPCR"
+author: "CT Berezin"
+date: "3/21/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(forcats)
+library(ggpubr)
+```
+
+### p-glycoprotein (p-gp; Abcb1a) mRNA expression
+
+```{r}
+pgp <- read.csv("../data/Abcb1a-ret-hyp-total.csv", fileEncoding = 'UTF-8-BOM')
+pgp <- pgp %>% mutate(Tissue = fct_relevel(Tissue, c("retina", "hypothalamus")),
+                      Treatment = fct_relevel(as.factor(Treatment), c("saline", "morphine")))
+
+#removing the outlier
+pgp <- pgp %>% filter(RelativeGE<3.5)
+
+pgp_plot <- pgp %>% ggplot(aes(x=Treatment, y=RelativeGE)) +
+  stat_summary(fun = 'mean', geom="bar", aes(fill=Tissue)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=.1) +
+  geom_point() +
+  facet_wrap(~Tissue) +
+  theme_bw() %+replace%
+  theme(axis.title.x=element_blank(),
+        legend.position = "none") +
+  labs(y="Relative Gene Expression") +
+  scale_fill_manual(values = c("blue", "goldenrod2"))
+  
+pgp_plot
+
+#ggsave(filename = "../figures/pgp_plot_tissue.svg", plot = pgp_plot, height=4, width=6)
+
+#non-normal
+shapiro.test(pgp$RelativeGE)
+shapiro.test(sqrt(pgp$RelativeGE))
+#normal
+shapiro.test(log(pgp$RelativeGE))
+shapiro.test(log2(pgp$RelativeGE))
+
+pgp <- pgp %>% mutate(logRGE = log(RelativeGE))
+
+car::leveneTest(logRGE ~ Tissue * Treatment, pgp)
+
+pgp_log_lm <- lm(logRGE ~ Treatment * Tissue, pgp)
+
+plot(pgp_log_lm, which=c(1,2))
+
+anova(pgp_log_lm)
+emmeans::emmeans(pgp_log_lm, pairwise ~ Treatment | Tissue)$contrasts
+emmeans::emmeans(pgp_log_lm, pairwise ~ Tissue | Treatment)$contrasts
+
+
+pgp_log_plot <- pgp %>% ggplot(aes(x=Tissue, y=logRGE)) +
+  stat_summary(fun = 'mean', geom="bar", aes(fill=Tissue)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=.1) +
+  geom_point() +
+  facet_wrap(~Treatment) +
+  theme_bw() %+replace%
+  theme(axis.title.x=element_blank(),
+        legend.position="none") +
+  labs(y="log(Relative Gene Expression)") +
+  ylim(-0.5, 1.5) +
+  scale_fill_manual(values = c("blue", "goldenrod2"))
+
+pgp_log_plot
+
+#ggsave(filename = "../figures/pgp_log_plot_trt.svg", plot = pgp_log_plot, height=4, width=6)
+```
