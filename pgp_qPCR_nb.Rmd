@@ -1,0 +1,101 @@
+---
+title: "pgp_qPCR"
+author: "CT Berezin"
+date: "3/21/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(forcats)
+library(ggpubr)
+library(lme4)
+```
+
+### p-glycoprotein (p-gp; Abcb1a) mRNA expression
+
+```{r}
+getwd()
+pgp <- read.csv("C:\\Users\\nikbe\\Documents\\Morphine Mass Spec\\Figures\\morphine_pk_retina\\Abcb1a-ret-hyp-total.csv", fileEncoding = 'UTF-8-BOM')
+pgp <- pgp %>% mutate(Tissue = fct_relevel(Tissue, c("retina", "hypothalamus")),
+                      Treatment = fct_relevel(as.factor(Treatment), c("saline", "morphine")))
+#removing the outlier
+pgp <- pgp %>% filter(RelativeGE<3.5)
+pgp
+pgp_plot <- pgp %>% ggplot(aes(x=Treatment, y=RelativeGE)) +
+  stat_summary(fun = 'mean', geom="bar", aes(fill=Tissue)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=.1) +
+  geom_point() +
+  facet_wrap(~Tissue) +
+  theme_bw() %+replace%
+  theme(axis.title.x=element_blank(),
+        legend.position = "none") +
+  labs(y="Relative Gene Expression") +
+  scale_fill_manual(values = c("blue", "goldenrod2"))
+pgp_plot
+
+pgp_plot1 <- pgp %>% ggplot(aes(x=Tissue, y=RelativeGE)) +
+  stat_summary(fun = 'mean', geom="bar", aes(fill=Treatment)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=.1) +
+  geom_point() +
+  facet_wrap(~Treatment) +
+  theme_bw() %+replace%
+  theme(axis.title.x=element_blank(),
+        legend.position = "none") +
+  labs(y="Relative Gene Expression") +
+  scale_fill_manual(values = c("lightblue", "red4"))
+pgp_plot1
+
+
+shapiro.test(pgp$RelativeGE)
+shapiro.test(sqrt(pgp$RelativeGE))
+#normal
+shapiro.test(log(pgp$RelativeGE))
+shapiro.test(log2(pgp$RelativeGE))
+pgp <- pgp %>% mutate(logRGE = log(RelativeGE))
+car::leveneTest(logRGE ~ Tissue * Treatment, pgp)
+pgp_log_lm <- lm(logRGE ~ Treatment * Tissue, pgp)
+plot(pgp_log_lm, which=c(1,2))
+anova(pgp_log_lm)
+emmeans::emmeans(pgp_log_lm, pairwise ~ Treatment | Tissue)$contrasts
+emmeans::emmeans(pgp_log_lm, pairwise ~ Tissue | Treatment)$contrasts
+
+pgp_log_lmer <- lmer(log(RelativeGE) ~ Tissue * Treatment + (1|Sample), data =pgp)
+plot(pgp_log_lmer, type=c("p","smooth"), col.line=1)
+lattice::qqmath(pgp_log_lmer)
+anova(pgp_log_lmer)
+emmeans::emmeans(pgp_log_lmer, pairwise ~ Treatment | Tissue)
+emmeans::emmeans(pgp_log_lmer, pairwise ~ Tissue | Treatment)
+
+
+pgp_log_plot <- pgp %>% ggplot(aes(x=Tissue, y=logRGE)) +
+  stat_summary(fun = 'mean', geom="bar", aes(fill=Tissue)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=.1) +
+  geom_point() +
+  facet_wrap(~Treatment) +
+  theme_bw() %+replace%
+  theme(axis.title.x=element_blank(),
+        legend.position="none") +
+  labs(y="log(Relative Gene Expression)") +
+  ylim(-0.5, 1.5) +
+  scale_fill_manual(values = c("blue", "goldenrod2"))
+pgp_log_plot
+
+pgp_log_plot1 <- pgp %>% ggplot(aes(x=Treatment, y=logRGE)) +
+  stat_summary(fun = 'mean', geom="bar", aes(fill=Treatment)) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width=.1) +
+  geom_point() +
+  facet_wrap(~Tissue) +
+  theme_bw() %+replace%
+  theme(axis.title.x=element_blank(),
+        legend.position="none") +
+  labs(y="log(Relative Gene Expression)") +
+  ylim(-0.5, 1.5) +
+  scale_fill_manual(values = c("lightblue", "red4"))
+
+pgp_log_plot1
+
+ggsave(filename = "pgp_plot.svg", plot = pgp_plot, height=4, width=4)
+ggsave(filename = "pgp_log_plot_trt.svg", plot = pgp_log_plot, height=4, width=4)
+ggsave(filename = "pgp_log_plot_trt1.svg", plot = pgp_log_plot1, height=4, width=4)
+```
