@@ -1,8 +1,8 @@
 ---
-title: "pgp_qPCR"
+title: "pgp_qPCR_nb"
 author: "CT Berezin"
 date: "3/21/2022"
-output: pdf_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
@@ -17,6 +17,7 @@ library(lme4)
 ```{r}
 getwd()
 pgp <- read.csv("C:\\Users\\nikbe\\Documents\\Morphine Mass Spec\\Figures\\morphine_pk_retina\\Abcb1a-ret-hyp-total.csv", fileEncoding = 'UTF-8-BOM')
+pgp <- read.csv("C:\\Users\\nikbe\\Documents\\Morphine Mass Spec\\Figures\\morphine_pk_retina\\Abcb1a-ret-hyp-totalnb.csv", fileEncoding = 'UTF-8-BOM')
 pgp <- pgp %>% mutate(Tissue = fct_relevel(Tissue, c("retina", "hypothalamus")),
                       Treatment = fct_relevel(as.factor(Treatment), c("saline", "morphine")))
 #removing the outlier
