@@ -1,7 +1,8 @@
 # morphine_pk_retina
 This respository contains data as well as the code for data analysis and data visualizations for "Morphine accumulates in the retina following systemic administration":
 
--Figures 1 & 2 (also Figure S1): 
+-Figures 1 & 2 (also Figure S1):
+
   code: morphine_pk-git.Rmd;
   data: morphine_pk_retina.csv, morphine_pk_serum.csv
 
