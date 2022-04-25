@@ -15,3 +15,6 @@ Figure 5:
 
       code: pgp_qPCR_nb.rmd 
       data: Abcb1a-ret-hyp-totalnb.csv
+
+link to manuscript: https://www.mdpi.com/1424-8247/15/5/527/htm
+citation: Bergum, N.; Berezin, C.-T.; Dooley, G.; Vigh, J. Morphine Accumulates in the Retina Following Chronic Systemic Administration. Pharmaceuticals 2022, 15, 527. https://doi.org/10.3390/ph15050527
