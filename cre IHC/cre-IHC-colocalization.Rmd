@@ -1,0 +1,179 @@
+---
+title: "Cre-IHC-colocalization"
+author: "CT Berezin"
+date: "2022-11-02"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(knitr)
+```
+
+```{r}
+setwd("D:/Microscopy/IHC images/20221019 - cre validation brain/processing/CSVs")
+wdir <- getwd()
+
+dapi_list <- list.files(wdir, pattern=".*dapi-quant.*")
+length(dapi_list)
+
+cre_list <- list.files(wdir, pattern=".*cre-quant.*")
+length(cre_list)
+
+coloc_list <- list.files(wdir, pattern=".*coloc.*")
+length(coloc_list)
+```
+
+```{r}
+dapi_sumstats <- data.frame()
+dapi__sumstats <- data.frame()
+dapi_names <- c()
+
+for (file in dapi_list){
+  dapi_count <- read.csv(paste0(wdir,"/",file))
+  dapi_count <- dapi_count %>%
+    rename(VolUnit = Vol..unit.,
+           VolPix = Vol..pix.) %>% 
+    select(c(Nb, Name, VolUnit, VolPix))
+  dapi_names[file] <- dapi_count %>% select(Name)
+  #print(head(dapi_count))
+  sumstats <- dapi_count %>%
+    summarise(filename = file,
+              n = n(),
+              minVol = min(VolUnit),
+              medVol = median(VolUnit),
+              meanVol = mean(VolUnit),
+              maxVol = max(VolUnit))
+  dapi_sumstats <- rbind(dapi_sumstats, sumstats)
+  mousesumstats <- dapi_count %>%
+    mutate(region = as.factor(str_extract(file, "(?<=McKO-).*(?=-section)")),
+           mouse = "McKO")
+  dapi__sumstats <- rbind(dapi__sumstats, mousesumstats)
+}
+
+dapi_region_sumstats <- dapi__sumstats %>% group_by(region) %>% 
+    summarise(minVol = min(VolUnit),
+              medVol = median(VolUnit),
+              meanVol = mean(VolUnit),
+              maxVol = max(VolUnit))
+dapi_region_sumstats
+
+dapi_mouse_sumstats <- dapi__sumstats %>% group_by(mouse) %>% 
+    summarise(minVol = min(VolUnit),
+              medVol = median(VolUnit),
+              meanVol = mean(VolUnit),
+              maxVol = max(VolUnit))
+dapi_mouse_sumstats
+
+
+names(dapi_names) <- sub("_dapi.*", "", names(dapi_names))
+names(dapi_names) <- sub("M_", "", names(dapi_names))
+
+cre_sumstats <- data.frame()
+cre_names <- c()
+
+for (file in cre_list){
+  cre_count <- read.csv(paste0(wdir,"/",file))
+  cre_count <- cre_count %>%
+    rename(VolUnit = Vol..unit.,
+           VolPix = Vol..pix.) %>% 
+    select(c(Nb, Name, VolUnit, VolPix))
+  cre_names[file] <- cre_count %>% select(Name)
+  #print(head(cre_count))
+  sumstats <- cre_count %>%
+    summarise(filename = file,
+              n = n(),
+              minVol = min(VolUnit),
+              medVol = median(VolUnit),
+              meanVol = mean(VolUnit),
+              maxVol = max(VolUnit))
+  cre_sumstats <- rbind(cre_sumstats, sumstats)
+}
+head(cre_sumstats)
+names(cre_names) <- sub("_cre.*", "", names(cre_names))
+names(cre_names) <- sub("M_", "", names(cre_names))
+```
+
+
+```{r}
+if(file.exists(wdir, pattern=".*filtered.csv")){
+  NULL
+} else {
+for (file in coloc_list){
+  coloc_count <- read.csv(paste0(wdir,"/",file))
+  filename <- paste0(file)
+  filename <- str_replace(filename, "C_", "")
+  filename <- str_replace(filename, "_cre.*", "")
+  #print(dapi_names[filename])
+  #print(dapi_names[filename][[1]])
+  coloc_count <- coloc_count %>%
+    select(c(Nb, Obj1, Obj2, Label1, Label2, coloc, PcColoc)) %>%
+    filter(Label1 %in% dapi_names[filename][[1]] & Label2 %in% cre_names[filename][[1]])
+  write.csv(coloc_count, file=paste0(wdir,"/",file,"-filtered.csv"))
+  }
+}
+
+coloc_list_filt <- list.files(wdir, pattern=".*filtered.csv")
+length(coloc_list_filt)
+
+coloc_sumstats <- data.frame()
+
+for (file in coloc_list_filt){
+    coloc_count <- read.csv(paste0(wdir,"/",file))
+    sumstats <- coloc_count %>% group_by(Label1) %>% 
+      summarise(filename = file,
+              n = n(),
+              colocPerc = sum(PcColoc),
+              trueColoc1 = colocPerc > 1,
+              trueColoc5 = colocPerc > 5,
+              pos = sum(coloc > 1),
+              truePos1 = pos > 1,
+              truePos5 = pos > 5,
+              min = min(coloc),
+              median = median(coloc),
+              mean = mean(coloc),
+              max = max(coloc))
+  coloc_sumstats <- rbind(coloc_sumstats, sumstats)
+}
+
+coloc_stats <- coloc_sumstats %>% group_by(filename) %>% summarise(n = n(),
+                                                    pos1Perc = sum(truePos1)/n*100,
+                                                    pos5Perc = sum(truePos5)/n*100,
+                                                    perc1Coloc = sum(trueColoc1)/n*100,
+                                                    perc5Coloc = sum(trueColoc5)/n*100)
+kable(coloc_stats)
+
+coloc5_stats <- coloc_sumstats %>% group_by(filename) %>%
+  filter(colocPerc > 5) %>% 
+  summarise(n = n(),
+            ">5% coloc" = sum(trueColoc5)/n*100,
+            minPerc = min(colocPerc),
+            meanPerc = mean(colocPerc),
+            maxPerc = max(colocPerc))
+kable(coloc5_stats)
+
+region_coloc_sumstats <- coloc_sumstats %>%
+  mutate(region = as.factor(str_extract(filename, "(?<=McKO-).*(?=-section)"))) %>% 
+  filter(colocPerc > 5) %>% 
+  group_by(region) %>%
+  summarise(
+     n = n(),
+     minPerc = min(colocPerc),
+     meanPerc = mean(colocPerc),
+     maxPerc = max(colocPerc)
+  )
+region_coloc_sumstats
+
+mouse_coloc_sumstats <- coloc_sumstats %>%
+  mutate(mouse = "McKO") %>% 
+  filter(colocPerc > 5) %>% 
+  group_by(mouse) %>%
+  summarise(
+     n = n(),
+     minPerc = min(colocPerc),
+     meanPerc = mean(colocPerc),
+     maxPerc = max(colocPerc)
+  )
+mouse_coloc_sumstats
+```

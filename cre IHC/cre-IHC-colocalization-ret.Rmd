@@ -1,0 +1,169 @@
+---
+title: "Cre-IHC-colocalization"
+author: "CT Berezin"
+date: "2022-11-02"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(knitr)
+```
+
+```{r}
+setwd("D:/Microscopy/IHC images/20221020 - Opn4-cre-EGFP/analysis/processing/CSVs")
+
+#wm 5 and 7 could have more GFP cells
+wdir <- getwd()
+
+count_list <- list.files("D:/Microscopy/IHC images/20221020 - Opn4-cre-EGFP/analysis/processing/CSVs", pattern=".*quant.*")
+length(count_list)
+
+
+coloc_list <- list.files("D:/Microscopy/IHC images/20221020 - Opn4-cre-EGFP/analysis/processing/CSVs", pattern=".*coloc.*")
+length(coloc_list)
+```
+
+```{r}
+img_sumstats <- data.frame()
+mouse_sumstats <- data.frame()
+dapi_names <- c()
+gfp_names <- c()
+cre_names <- c()
+
+for (file in count_list){
+  counts <- read.csv(paste0(wdir,"/",file))
+  counts <- counts %>%
+    rename(VolUnit = Vol..unit.,
+           VolPix = Vol..pix.) %>% 
+    select(c(Nb, Label, Name, VolUnit, VolPix))
+  counts <- counts %>% mutate(Name = str_replace(Name, "obj325-val3", "obj325-val1"),
+                              Name = str_replace(Name, "obj532-val2", "obj532-val1"),
+                              Name = str_replace(Name, "obj802-val2", "obj801-val1"))
+  cutoffs <- counts %>% filter(str_detect(Name, ".*(val1)$"))
+  counts <- counts %>% mutate(type = case_when(
+    between(Nb+1, cutoffs[1,1], cutoffs[2,1]) ~ "DAPI",
+    between(Nb+1, cutoffs[2,1], cutoffs[3,1]) ~ "GFP",
+    Nb+1 > cutoffs[3,1] ~ "cre"
+  ))
+  dapi_names[file] <- counts %>% filter(type == "DAPI") %>% select(Name)
+  gfp_names[file] <- counts %>% filter(type == "GFP") %>% select(Name)
+  cre_names[file] <- counts %>% filter(type == "cre") %>% select(Name)
+  #print(head(counts))
+  imgsumstats <- counts %>%
+    group_by(type) %>% 
+    summarise(filename = file,
+              n = n(),
+              minVol = min(VolUnit),
+              medVol = median(VolUnit),
+              meanVol = mean(VolUnit),
+              maxVol = max(VolUnit))
+  img_sumstats <- rbind(img_sumstats, imgsumstats)
+  mousesumstats <- counts %>% filter(type == "GFP") %>% 
+    mutate(mouse = as.factor(str_extract(file, "(?<=_).*(?=-[:digit:]_)")))
+  mouse_sumstats <- rbind(mouse_sumstats, mousesumstats)
+}
+img_sumstats
+
+mouse_gfp_sumstats <- mouse_sumstats %>% group_by(mouse) %>% 
+    summarise(minVol = min(VolUnit),
+              medVol = median(VolUnit),
+              meanVol = mean(VolUnit),
+              maxVol = max(VolUnit))
+mouse_gfp_sumstats
+
+overall_sumstats <- mouse_sumstats %>%  
+    summarise(minVol = min(VolUnit),
+              medVol = median(VolUnit),
+              meanVol = mean(VolUnit),
+              maxVol = max(VolUnit))
+overall_sumstats
+
+names(dapi_names) <- sub("_quant.*", "", names(dapi_names))
+names(dapi_names) <- sub("M_", "", names(dapi_names))
+names(gfp_names) <- sub("_quant.*", "", names(gfp_names))
+names(gfp_names) <- sub("M_", "", names(gfp_names))
+names(cre_names) <- sub("_quant.*", "", names(cre_names))
+names(cre_names) <- sub("M_", "", names(cre_names))
+
+#gfp_names
+```
+
+
+```{r}
+coloc_sumstats <- data.frame()
+
+for (file in coloc_list){
+  coloc_count <- read.csv(paste0(wdir,"/",file))
+  filename <- paste0(file)
+  filename <- str_replace(filename, "C_", "")
+  filename <- str_replace(filename, "_cre.*", "")
+  coloc_count <- coloc_count %>% mutate(Label1 = str_replace(Label1, "obj325-val3", "obj325-val1"),
+                              Label1 = str_replace(Label1, "obj532-val2", "obj532-val1"),
+                              Label1 = str_replace(Label1, "obj802-val2", "obj801-val1"))
+  coloc_count <- coloc_count %>%
+    select(c(Label1, Label2, coloc, PcColoc)) %>% 
+    filter(Label1 %in% gfp_names[filename][[1]] & Label2 %in% cre_names[filename][[1]])
+  #coloc_count <- full_join(coloc_count, cell_types, by=c("Label1"="Name"))
+  #coloc_count <- full_join(coloc_count, cell_types, by=c("Label2"="Name"), suffix=c("_1","_2"))
+  #coloc_count <- coloc_count %>% filter(type_1 == "GFP" & type_2 == "cre", na.rm = TRUE)
+  sumstats <- coloc_count %>% group_by(Label1) %>% 
+      summarise(filename = file,
+              n = n(),
+              colocPerc = sum(PcColoc),
+              trueColoc1 = colocPerc >= 1,
+              trueColoc5 = colocPerc >= 5,
+              posObjs = sum(coloc > 1),
+              truePos1 = posObjs >= 1,
+              truePos5 = posObjs >= 5,
+              )
+  coloc_sumstats <- rbind(coloc_sumstats, sumstats)
+}
+
+head(coloc_sumstats)
+
+
+
+coloc_stats <- coloc_sumstats %>% group_by(filename) %>% summarise(n = n(),
+                                                    ">1% coloc" = sum(trueColoc1)/n*100,
+                                                    ">5% coloc" = sum(trueColoc5)/n*100,
+                                                    minPerc = min(colocPerc),
+                                                    meanPerc = mean(colocPerc),
+                                                    maxPerc = max(colocPerc),
+                                                    ">1dot" = sum(truePos1)/n*100,
+                                                    ">5dots" = sum(truePos5)/n*100,)
+kable(coloc_stats)
+
+coloc5_stats <- coloc_sumstats %>% group_by(filename) %>%
+  filter(colocPerc > 5) %>% 
+  summarise(n = n(),
+            ">5% coloc" = sum(trueColoc5)/n*100,
+            minPerc = min(colocPerc),
+            meanPerc = mean(colocPerc),
+            maxPerc = max(colocPerc))
+kable(coloc5_stats)
+
+mouse_coloc_sumstats <- coloc_sumstats %>%
+  mutate(mouse = str_extract(filename, "(?<=C_).*(?=-[:digit:]_)")) %>%
+  filter(colocPerc > 5) %>% 
+  group_by(mouse) %>%
+  summarise(
+     n = n(),
+     minPerc = min(colocPerc),
+     meanPerc = mean(colocPerc),
+     maxPerc = max(colocPerc)
+  )
+mouse_coloc_sumstats
+
+overall_coloc_sumstats <- coloc_sumstats %>%
+  filter(colocPerc > 5) %>% 
+  summarise(
+     n = n(),
+     minPerc = min(colocPerc),
+     meanPerc = mean(colocPerc),
+     maxPerc = max(colocPerc)
+  )
+overall_coloc_sumstats
+```
+
