@@ -1,5 +1,5 @@
 ---
-title: "Cre-IHC-colocalization"
+title: "Cre IHC colocalization: retina"
 author: "CT Berezin"
 date: "2022-11-02"
 output: pdf_document
